@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS Billing (
     payment_status VARCHAR(20) CHECK (payment_status IN ('Paid', 'Pending', 'Cancelled')),
     bill_date TIMESTAMP CHECK (bill_date > '2026-01-01'),
     patient_id INT REFERENCES Patient(patient_id) ON DELETE CASCADE
+    treatment_id INT REFERENCES Treatment(treatment_id) ON DELETE CASCADE
 );
 
 TRUNCATE TABLE 
