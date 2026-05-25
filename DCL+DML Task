@@ -1,0 +1,192 @@
+-- PART A
+rollback;
+
+revoke all privileges on all tables in schema hospital_management_db from hospital_db_admin, hospital_db_readonly;
+revoke all privileges on schema hospital_management_db from hospital_db_admin, hospital_db_readonly;
+
+drop owned by hospital_db_admin cascade;
+drop owned by hospital_db_readonly cascade;
+
+drop user if exists db_admin_user;
+drop user if exists db_reader_user;
+drop role if exists hospital_db_admin;
+drop role if exists hospital_db_readonly;
+
+create role hospital_db_admin;
+create role hospital_db_readonly;
+
+grant usage on schema hospital_management_db to hospital_db_admin;
+grant usage on schema hospital_management_db to hospital_db_readonly;
+
+grant all privileges on all tables in schema hospital_management_db to hospital_db_admin;
+grant select on all tables in schema hospital_management_db to hospital_db_readonly;
+
+create user db_admin_user with password 'admin123';
+grant hospital_db_admin to db_admin_user;
+
+create user db_reader_user with password 'reader123';
+grant hospital_db_readonly to db_reader_user;
+
+revoke update, delete on all tables in schema hospital_management_db from hospital_db_readonly;
+
+/* \dp hospital_management_db.patient
+Schema                 | Name    | Type  | Access privileges                     | Column privileges | Policies
+-----------------------+---------+-------+---------------------------------------+-------------------+---------
+hospital_management_db | patient | table | hospital_db_admin=arwd/postgres       |                   |
+                       |         |       | hospital_db_readonly=r/postgres       |                   |
+*/
+
+set search_path to hospital_management_db, public;
+
+set role db_admin_user;
+select current_user;
+select count(*) from patient;
+
+begin;
+insert into patient (first_name, last_name, date_of_birth, gender) values ('SecuredAdmin', 'Tester', '1995-04-24', 'Male');
+rollback;
+
+begin;
+update patient set first_name = first_name;
+rollback;
+
+begin;
+delete from patient where patient_id = (select max(patient_id) from patient);
+rollback;
+
+reset role;
+
+set role db_reader_user;
+select current_user;
+select count(*) from patient;
+
+begin;
+insert into patient (first_name, last_name, date_of_birth, gender) values ('GuestReader', 'Check', '1998-11-12', 'Female');
+-- ERROR:  permission denied for table patient
+rollback;
+
+begin;
+update patient set first_name = first_name;
+-- ERROR:  permission denied for table patient
+rollback;
+
+begin;
+delete from patient where patient_id = 1;
+-- ERROR:  permission denied for table patient
+rollback;
+
+reset role;
+
+-- PART B
+truncate table 
+    billing,
+    room_assignment,
+    patient_treatment,
+    medical_record,
+    appointment,
+    treatment,
+    room,
+    patient,
+    medical_staff,
+    department 
+restart identity cascade;
+
+insert into department (name, location) values 
+('Cardiology', 'Floor 1'),
+('Neurology', 'Floor 2'),
+('Pediatrics', 'Floor 3'),
+('Surgery', 'Building B'),
+('Therapy', 'Building C');
+
+insert into medical_staff (first_name, last_name, role, phone, email, department_id) values 
+('Michael', 'Adams', 'Doctor', '+77011112233', 'adams@hospital.com', (select department_id from department where name = 'Cardiology')),
+('Emily', 'Watson', 'Surgeon', '+77022223344', 'watson@hospital.com', (select department_id from department where name = 'Surgery')),
+('Daniel', 'Smith', 'Therapist', '+77033334455', 'smith@hospital.com', (select department_id from department where name = 'Therapy')),
+('Jessica', 'Taylor', 'Pediatrician', '+77044445566', 'taylor@hospital.com', (select department_id from department where name = 'Pediatrics')),
+('Kevin', 'Harris', 'Neurologist', '+77055556677', 'harris@hospital.com', (select department_id from department where name = 'Neurology'));
+
+insert into patient (first_name, last_name, date_of_birth, gender, phone, address) values 
+('John', 'Smith', '1990-05-12', 'Male', '+77771234567', 'Atyrau, Satpayev St 15'),
+('Alice', 'Brown', '1985-08-20', 'Female', '+77772345678', 'Atyrau, Azattyk Ave 40'),
+('Robert', 'Green', '2015-03-14', 'Male', '+77773456789', 'Atyrau, Mahambet St 112'),
+('Diana', 'Prince', '1993-12-05', 'Female', '+77774567890', 'Atyrau, Vladimirsky St 5'),
+('Arthur', 'Dent', '1979-10-11', 'Male', '+77775678901', 'Atyrau, Kulmanov St 22');
+
+insert into room (room_number, capacity, department_id) values 
+('101A', 2, (select department_id from department where name = 'Cardiology')),
+('205B', 4, (select department_id from department where name = 'Neurology')),
+('302C', 3, (select department_id from department where name = 'Pediatrics')),
+('B-12', 1, (select department_id from department where name = 'Surgery')),
+('C-04', 5, (select department_id from department where name = 'Therapy'));
+
+insert into appointment (appointment_date, status, patient_id, staff_id) values 
+('2026-05-10 10:00:00', 'Scheduled', (select patient_id from patient where last_name = 'Smith'), (select staff_id from medical_staff where last_name = 'Adams')),
+('2026-05-11 14:30:00', 'Completed', (select patient_id from patient where last_name = 'Brown'), (select staff_id from medical_staff where last_name = 'Smith')),
+('2026-05-12 09:15:00', 'Scheduled', (select patient_id from patient where last_name = 'Green'), (select staff_id from medical_staff where last_name = 'Taylor')),
+('2026-05-13 11:00:00', 'Cancelled', (select patient_id from patient where last_name = 'Prince'), (select staff_id from medical_staff where last_name = 'Watson')),
+('2026-05-14 16:00:00', 'Scheduled', (select patient_id from patient where last_name = 'Dent'), (select staff_id from medical_staff where last_name = 'Harris'));
+
+insert into medical_record (diagnosis, record_date, patient_id, staff_id) values 
+('Arrhythmia detected, monitoring required.', '2026-05-10', (select patient_id from patient where last_name = 'Smith'), (select staff_id from medical_staff where last_name = 'Adams')),
+('Acute bronchitis, prescribed antibiotics.', '2026-05-11', (select patient_id from patient where last_name = 'Brown'), (select staff_id from medical_staff where last_name = 'Smith')),
+('Routine checkup, healthy growth metrics.', '2026-05-12', (select patient_id from patient where last_name = 'Green'), (select staff_id from medical_staff where last_name = 'Taylor')),
+('Migraine, recommended lifestyle adjustments.', '2026-05-14', (select patient_id from patient where last_name = 'Dent'), (select staff_id from medical_staff where last_name = 'Harris')),
+('Hypertension, initial screening.', '2026-05-15', (select patient_id from patient where last_name = 'Brown'), (select staff_id from medical_staff where last_name = 'Adams'));
+
+insert into treatment (name, description, cost) values 
+('ECG Monitoring', 'Electrocardiogram testing and analysis.', 45.00),
+('Physiotherapy', 'Post-injury physical rehabilitation session.', 60.00),
+('General Consultation', 'Standard health assessment and advice.', 30.00),
+('MRI Scan', 'Magnetic resonance imaging of the brain.', 250.00),
+('Surgical Dressing', 'Cleaning and dressing of postoperative wounds.', 15.00);
+
+insert into patient_treatment (patient_id, treatment_id, start_date, end_date, notes) values 
+((select patient_id from patient where last_name = 'Smith'), (select treatment_id from treatment where name = 'ECG Monitoring'), '2026-05-10', '2026-05-12', 'Daily checkups'),
+((select patient_id from patient where last_name = 'Brown'), (select treatment_id from treatment where name = 'Physiotherapy'), '2026-05-11', '2026-05-25', 'Three times a week'),
+((select patient_id from patient where last_name = 'Green'), (select treatment_id from treatment where name = 'General Consultation'), '2026-05-12', '2026-05-12', 'Completed'),
+((select patient_id from patient where last_name = 'Dent'), (select treatment_id from treatment where name = 'MRI Scan'), '2026-05-14', '2026-05-14', 'Fast track results requested'),
+((select patient_id from patient where last_name = 'Brown'), (select treatment_id from treatment where name = 'General Consultation'), '2026-05-15', '2026-05-15', 'Follow up check');
+
+insert into room_assignment (admission_date, discharge_date, patient_id, room_id) values 
+('2026-05-10', '2026-05-12', (select patient_id from patient where last_name = 'Smith'), (select room_id from room where room_number = '101A')),
+('2026-05-11', '2026-05-20', (select patient_id from patient where last_name = 'Brown'), (select room_id from room where room_number = 'C-04')),
+('2026-05-12', '2026-05-13', (select patient_id from patient where last_name = 'Green'), (select room_id from room where room_number = '302C')),
+('2026-05-14', '2026-05-14', (select patient_id from patient where last_name = 'Dent'), (select room_id from room where room_number = '205B')),
+('2026-05-15', '2026-05-18', (select patient_id from patient where last_name = 'Prince'), (select room_id from room where room_number = 'B-12'));
+
+insert into billing (total_amount, payment_status, bill_date, patient_id, treatment_id) values 
+(45.00, 'Paid', '2026-05-12 11:00:00', (select patient_id from patient where last_name = 'Smith'), (select treatment_id from treatment where name = 'ECG Monitoring')),
+(60.00, 'Pending', '2026-05-11 15:00:00', (select patient_id from patient where last_name = 'Brown'), (select treatment_id from treatment where name = 'Physiotherapy')),
+(30.00, 'Paid', '2026-05-12 10:00:00', (select patient_id from patient where last_name = 'Green'), (select treatment_id from treatment where name = 'General Consultation')),
+(250.00, 'Pending', '2026-05-14 17:30:00', (select patient_id from patient where last_name = 'Dent'), (select treatment_id from treatment where name = 'MRI Scan')),
+(15.00, 'Cancelled', '2026-05-13 12:00:00', (select patient_id from patient where last_name = 'Prince'), (select treatment_id from treatment where name = 'Surgical Dressing'));
+
+-- Business reason: MRI procedure price was reduced after equipment maintenance costs decreased.
+select cost from treatment where name = 'MRI Scan';
+update treatment 
+set cost = 239.99 
+where name = 'MRI Scan';
+
+-- Business reason: Patient requested phone number update after changing mobile provider.
+select phone from patient where phone = '+77771234567';
+update patient 
+set phone = '+77779998877' 
+where phone = '+77771234567';
+
+-- Business reason: Billing costs for Cardiology patients were adjusted due to increased equipment and maintenance expenses.
+select b.bill_id, b.total_amount, d.name from billing b join treatment t on b.treatment_id = t.treatment_id join room_assignment ra on b.patient_id = ra.patient_id join room r on ra.room_id = r.room_id join department d on r.department_id = d.department_id where d.name = 'Cardiology';
+update billing b
+set total_amount = round(b.total_amount * 1.10, 2)
+from room_assignment ra
+join room r on ra.room_id = r.room_id
+join department d on r.department_id = d.department_id
+where b.patient_id = ra.patient_id 
+and d.name = 'Cardiology';
+
+-- Business reason: cancelled appointments carry no clinical value and distort scheduling.
+begin;
+delete from appointment 
+where status = 'Cancelled';
+select count(*) from appointment;
+-- 4
+rollback;
